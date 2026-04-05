@@ -12,7 +12,10 @@ from __future__ import annotations
 
 from pose_extractor import PoseFrame, PoseExtractor, calc_angle
 
-from .common_types import EvaluationResult, FeedbackItem
+try:
+    from .common_types import EvaluationResult, FeedbackItem
+except ImportError:
+    from common_types import EvaluationResult, FeedbackItem
 
 # Degrees
 KNEE_ANGLE_MIN = 70
@@ -90,9 +93,8 @@ def _check_frame(frame: PoseFrame, ext: PoseExtractor) -> list[str]:
 
     l_ang = calc_angle(l_h, l_k, l_a)
     r_ang = calc_angle(r_h, r_k, r_a)
-    if not (KNEE_ANGLE_MIN <= l_ang <= KNEE_ANGLE_MAX):
-        issues.append("knee_angle")
-    if not (KNEE_ANGLE_MIN <= r_ang <= KNEE_ANGLE_MAX):
+    if not (KNEE_ANGLE_MIN <= l_ang <= KNEE_ANGLE_MAX) or \
+       not (KNEE_ANGLE_MIN <= r_ang <= KNEE_ANGLE_MAX):
         issues.append("knee_angle")
 
     if abs(l_s["y"] - r_s["y"]) > SHOULDER_LEVEL_MAX:

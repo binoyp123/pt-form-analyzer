@@ -10,7 +10,10 @@ Checks:
 
 from pose_extractor import PoseFrame, PoseExtractor, calc_angle
 
-from .common_types import EvaluationResult, FeedbackItem
+try:
+    from .common_types import EvaluationResult, FeedbackItem
+except ImportError:
+    from common_types import EvaluationResult, FeedbackItem
 
 # Thresholds (in degrees)
 BACK_ANGLE_TOLERANCE = 15  # how far from 180° is acceptable

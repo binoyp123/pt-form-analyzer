@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from pose_extractor import PoseFrame, PoseExtractor
 
-from .common_types import EvaluationResult, FeedbackItem
+try:
+    from .common_types import EvaluationResult, FeedbackItem
+except ImportError:
+    from common_types import EvaluationResult, FeedbackItem
 
 SMOOTH_WINDOW = 7
 MIN_AMPLITUDE = 0.025  # normalized; min peak-to-trough for "real" motion

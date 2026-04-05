@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
-import time
+import uuid
 
 from pose_extractor import PoseExtractor
 from evaluators import bird_dog, bridge, cat_cow
@@ -91,8 +91,8 @@ async def analyze(
         )
 
     # Save video temporarily
-    suffix = Path(video.filename).suffix or ".mp4"
-    filename = f"form_video_{int(time.time())}{suffix}"
+    suffix = Path(video.filename).suffix if video.filename else ".mp4"
+    filename = f"form_video_{uuid.uuid4().hex}{suffix}"
     video_path = TMP_DIR / filename
 
     try:
