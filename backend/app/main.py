@@ -5,7 +5,7 @@ from pathlib import Path
 import time
 
 from pose_extractor import PoseExtractor
-from evaluators import bird_dog
+from evaluators import bird_dog, bridge, cat_cow
 
 app = FastAPI(title="PT Form Analyzer API")
 
@@ -26,9 +26,16 @@ SUPPORTED_EXERCISES = {
         "evaluator": bird_dog,
         "description": "Arm and leg extension exercise for core stability",
     },
-    # Add more exercises here as you build them
-    # "bridge": {"name": "Bridge", "evaluator": bridge, ...},
-    # "cat_cow": {"name": "Cat Cow", "evaluator": cat_cow, ...},
+    "bridge": {
+        "name": "Glute Bridge",
+        "evaluator": bridge,
+        "description": "Hip lift with feet planted — glutes and hamstrings",
+    },
+    "cat_cow": {
+        "name": "Cat-Cow",
+        "evaluator": cat_cow,
+        "description": "Quadruped spine flexion and extension flow",
+    },
 }
 
 

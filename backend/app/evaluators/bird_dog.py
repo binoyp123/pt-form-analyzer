@@ -8,26 +8,9 @@ Checks:
 4. Hold stability across frames
 """
 
-from dataclasses import dataclass
-from pose_extractor import PoseFrame, PoseExtractor, calc_angle, is_landmark_visible
+from pose_extractor import PoseFrame, PoseExtractor, calc_angle
 
-
-@dataclass
-class FeedbackItem:
-    """Single piece of feedback."""
-    status: str  # "good", "warning", "error"
-    message: str
-    frames: list[int]  # which frames had this issue
-
-
-@dataclass
-class EvaluationResult:
-    """Complete evaluation result."""
-    score: int  # 0-100
-    feedback: list[FeedbackItem]
-    frames_analyzed: int
-    exercise: str = "bird_dog"
-
+from .common_types import EvaluationResult, FeedbackItem
 
 # Thresholds (in degrees)
 BACK_ANGLE_TOLERANCE = 15  # how far from 180° is acceptable
@@ -100,7 +83,8 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
         return EvaluationResult(
             score=0,
             feedback=[FeedbackItem("error", "No pose data found", [])],
-            frames_analyzed=0
+            frames_analyzed=0,
+            exercise="bird_dog",
         )
 
     # Filter to only frames in hold position
@@ -110,7 +94,8 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
         return EvaluationResult(
             score=0,
             feedback=[FeedbackItem("warning", "No bird-dog hold positions detected", [])],
-            frames_analyzed=len(frames)
+            frames_analyzed=len(frames),
+            exercise="bird_dog",
         )
 
     issues = {
@@ -148,7 +133,8 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
     return EvaluationResult(
         score=score,
         feedback=feedback,
-        frames_analyzed=total
+        frames_analyzed=total,
+        exercise="bird_dog",
     )
 
 
