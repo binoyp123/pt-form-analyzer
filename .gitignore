@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+backend/app/tmp/
+*.mp4
+*.mov
+.DS_Store
