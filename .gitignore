@@ -3,4 +3,7 @@ __pycache__/
 backend/app/tmp/
 *.mp4
 *.mov
-.DS_Store.idea/
+.DS_Store
+.idea/
+frontend/node_modules/
+frontend/dist/
