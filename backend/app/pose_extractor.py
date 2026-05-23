@@ -46,10 +46,11 @@ class PoseExtractor:
             min_tracking_confidence=min_tracking_confidence,
         )
 
-    def extract_from_video(self, video_path: str | Path) -> list[PoseFrame]:
+    def extract_from_video(self, video_path: str | Path, target_fps: float = 15) -> list[PoseFrame]:
         """
-        Extract poses from all frames in a video.
-        Returns list of PoseFrame objects.
+        Extract poses from a video, sampling at *target_fps* to avoid
+        processing every frame of high-fps footage (e.g. 60 fps iPhone video).
+        Set target_fps=0 to process every frame.
         """
         video_path = Path(video_path)
         if not video_path.exists():
@@ -59,7 +60,8 @@ class PoseExtractor:
         if not cap.isOpened():
             raise ValueError(f"Could not open video: {video_path}")
 
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        step = max(1, int(fps / target_fps)) if target_fps > 0 else 1
         frames = []
         frame_num = 0
 
@@ -68,27 +70,28 @@ class PoseExtractor:
             if not ret:
                 break
 
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = self.pose.process(rgb)
+            if frame_num % step == 0:
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = self.pose.process(rgb)
 
-            if results.pose_landmarks:
-                landmarks = [
-                    {
-                        "x": lm.x,
-                        "y": lm.y,
-                        "z": lm.z,
-                        "visibility": lm.visibility,
-                    }
-                    for lm in results.pose_landmarks.landmark
-                ]
+                if results.pose_landmarks:
+                    landmarks = [
+                        {
+                            "x": lm.x,
+                            "y": lm.y,
+                            "z": lm.z,
+                            "visibility": lm.visibility,
+                        }
+                        for lm in results.pose_landmarks.landmark
+                    ]
 
-                frames.append(PoseFrame(
-                    frame_num=frame_num,
-                    timestamp_ms=(frame_num / fps) * 1000 if fps > 0 else 0,
-                    landmarks=landmarks,
-                    image_width=frame.shape[1],
-                    image_height=frame.shape[0],
-                ))
+                    frames.append(PoseFrame(
+                        frame_num=frame_num,
+                        timestamp_ms=(frame_num / fps) * 1000,
+                        landmarks=landmarks,
+                        image_width=frame.shape[1],
+                        image_height=frame.shape[0],
+                    ))
 
             frame_num += 1
 

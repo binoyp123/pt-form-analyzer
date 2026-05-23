@@ -1,11 +1,20 @@
 """
 Glute bridge exercise evaluator.
 
-Heuristics (tune with real videos):
-- Hips elevated above shoulder line (MediaPipe Y increases downward)
-- Knee flexion near ~90° at hip–knee–ankle
-- Shoulders level and staying grounded (stable Y, small L/R difference)
-- Hips stacked under shoulders laterally (mid_x alignment)
+Hold detection strategy (camera-angle robust):
+- Person is supine: shoulders and hips are both in the lower portion of
+  the frame (high normalized Y), while knees are above them (lower Y).
+- Hips are elevated: mid_hip.y < mid_shoulder.y (closer to top of frame).
+- Knees are bent: knees are above hips in Y, and the hip-knee-ankle angle
+  is NOT near-straight (i.e. < 160°). We deliberately use a very wide
+  acceptable range (25-140°) because 2D projection compresses the angle
+  dramatically from a side view (~40°) vs front view (~90°).
+
+Quality checks on hold frames:
+- Hip height relative to shoulder-ankle line
+- Knee angle consistency (relative to the video's own median angle)
+- Shoulders level (small L/R Y difference)
+- Lateral alignment (mid_hip.x near mid_shoulder.x)
 """
 
 from __future__ import annotations
@@ -17,12 +26,15 @@ try:
 except ImportError:
     from common_types import EvaluationResult, FeedbackItem
 
-# Degrees
-KNEE_ANGLE_MIN = 70
-KNEE_ANGLE_MAX = 115
-HIP_LIFT_MIN = 0.02  # normalized; min (shoulder_y - hip_y) when lifted
-SHOULDER_LEVEL_MAX = 0.09  # |L_shoulder.y - R_shoulder.y|
-HIP_SHOULDER_X_ALIGN = 0.18  # |mid_shoulder.x - mid_hip.x|
+# Hold detection — intentionally wide to handle varied camera angles
+KNEE_ANGLE_MIN = 25   # side view can compress to ~40°
+KNEE_ANGLE_MAX = 140  # front view shows ~90°, allow headroom
+HIP_LIFT_MIN = 0.005  # very small; side-view lift is often only 0.01
+
+# Quality thresholds
+SHOULDER_LEVEL_MAX = 0.09   # |L_shoulder.y - R_shoulder.y|
+HIP_SHOULDER_X_ALIGN = 0.22  # |mid_shoulder.x - mid_hip.x|
+KNEE_ANGLE_DEVIATION = 20    # degrees away from the video's own median
 
 
 def _mid(lm1: dict, lm2: dict) -> dict | None:
@@ -51,25 +63,30 @@ def is_in_bridge_hold(frame: PoseFrame, ext: PoseExtractor) -> bool:
 
     mid_s = _mid(l_s, r_s)
     mid_h = _mid(l_h, r_h)
-    if not mid_s or not mid_h:
+    mid_k = _mid(l_k, r_k)
+    if not mid_s or not mid_h or not mid_k:
         return False
 
-    # Hips must read as lifted (smaller Y than shoulders)
+    # 1. Hips must be above shoulders in frame (lower Y = higher in image)
     if mid_h["y"] > mid_s["y"] - HIP_LIFT_MIN:
         return False
 
+    # 2. Knees should be above hips (bent, not lying flat)
+    if mid_k["y"] > mid_h["y"]:
+        return False
+
+    # 3. Knee angle must be bent (not standing straight ~180°)
     l_ang = calc_angle(l_h, l_k, l_a)
     r_ang = calc_angle(r_h, r_k, r_a)
-    if not (KNEE_ANGLE_MIN <= l_ang <= KNEE_ANGLE_MAX):
-        return False
-    if not (KNEE_ANGLE_MIN <= r_ang <= KNEE_ANGLE_MAX):
+    avg_ang = (l_ang + r_ang) / 2
+    if not (KNEE_ANGLE_MIN <= avg_ang <= KNEE_ANGLE_MAX):
         return False
 
     return True
 
 
-def _check_frame(frame: PoseFrame, ext: PoseExtractor) -> list[str]:
-    issues: list[str] = []
+def _get_frame_metrics(frame: PoseFrame, ext: PoseExtractor) -> dict | None:
+    """Extract all relevant measurements from a single frame."""
     l_s = ext.get_landmark(frame, "left_shoulder")
     r_s = ext.get_landmark(frame, "right_shoulder")
     l_h = ext.get_landmark(frame, "left_hip")
@@ -80,27 +97,37 @@ def _check_frame(frame: PoseFrame, ext: PoseExtractor) -> list[str]:
     r_a = ext.get_landmark(frame, "right_ankle")
 
     if not all([l_s, r_s, l_h, r_h, l_k, r_k, l_a, r_a]):
-        return ["visibility"]
+        return None
 
     mid_s = _mid(l_s, r_s)
     mid_h = _mid(l_h, r_h)
     if not mid_s or not mid_h:
-        return ["visibility"]
+        return None
 
-    lift = mid_s["y"] - mid_h["y"]
-    if lift < HIP_LIFT_MIN:
+    return {
+        "lift": mid_s["y"] - mid_h["y"],
+        "l_knee": calc_angle(l_h, l_k, l_a),
+        "r_knee": calc_angle(r_h, r_k, r_a),
+        "shoulder_diff": abs(l_s["y"] - r_s["y"]),
+        "x_align": abs(mid_s["x"] - mid_h["x"]),
+    }
+
+
+def _check_frame(metrics: dict, median_knee: float) -> list[str]:
+    """Check a single frame for quality issues."""
+    issues: list[str] = []
+
+    if metrics["lift"] < HIP_LIFT_MIN:
         issues.append("hip_height")
 
-    l_ang = calc_angle(l_h, l_k, l_a)
-    r_ang = calc_angle(r_h, r_k, r_a)
-    if not (KNEE_ANGLE_MIN <= l_ang <= KNEE_ANGLE_MAX) or \
-       not (KNEE_ANGLE_MIN <= r_ang <= KNEE_ANGLE_MAX):
+    avg_knee = (metrics["l_knee"] + metrics["r_knee"]) / 2
+    if abs(avg_knee - median_knee) > KNEE_ANGLE_DEVIATION:
         issues.append("knee_angle")
 
-    if abs(l_s["y"] - r_s["y"]) > SHOULDER_LEVEL_MAX:
+    if metrics["shoulder_diff"] > SHOULDER_LEVEL_MAX:
         issues.append("shoulder_level")
 
-    if abs(mid_s["x"] - mid_h["x"]) > HIP_SHOULDER_X_ALIGN:
+    if metrics["x_align"] > HIP_SHOULDER_X_ALIGN:
         issues.append("alignment")
 
     return issues
@@ -115,7 +142,6 @@ def _calc_score(issues: dict[str, list[int]], total: int) -> int:
         "knee_angle": 25,
         "shoulder_level": 20,
         "alignment": 25,
-        "visibility": 15,
     }
     for key, frames in issues.items():
         if frames:
@@ -140,7 +166,8 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
             [
                 FeedbackItem(
                     "warning",
-                    "No glute bridge hold detected (hips up, knees ~90°)",
+                    "No glute bridge hold detected — make sure hips are lifted "
+                    "and knees are bent, with full body visible",
                     [],
                 )
             ],
@@ -148,27 +175,44 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
             "bridge",
         )
 
+    # Pre-compute metrics for all hold frames
+    frame_metrics: list[tuple[PoseFrame, dict]] = []
+    for f in hold_frames:
+        m = _get_frame_metrics(f, extractor)
+        if m is not None:
+            frame_metrics.append((f, m))
+
+    if not frame_metrics:
+        return EvaluationResult(
+            0,
+            [FeedbackItem("warning", "Landmarks not visible in hold frames", [])],
+            len(frames),
+            "bridge",
+        )
+
+    # Compute median knee angle for this video (camera-relative baseline)
+    all_knee_avgs = sorted(
+        (m["l_knee"] + m["r_knee"]) / 2 for _, m in frame_metrics
+    )
+    median_knee = all_knee_avgs[len(all_knee_avgs) // 2]
+
     issues: dict[str, list[int]] = {
         "hip_height": [],
         "knee_angle": [],
         "shoulder_level": [],
         "alignment": [],
-        "visibility": [],
     }
     good = 0
 
-    for frame in hold_frames:
-        probs = _check_frame(frame, extractor)
-        if probs == ["visibility"]:
-            issues["visibility"].append(frame.frame_num)
-            continue
+    for f, m in frame_metrics:
+        probs = _check_frame(m, median_knee)
         if not probs:
             good += 1
-            continue
-        for p in probs:
-            issues[p].append(frame.frame_num)
+        else:
+            for p in probs:
+                issues[p].append(f.frame_num)
 
-    total = len(hold_frames)
+    total = len(frame_metrics)
     score = _calc_score(issues, total)
 
     feedback: list[FeedbackItem] = [
@@ -185,11 +229,10 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
         )
 
     labels = {
-        "hip_height": "Hips not high enough vs shoulders",
-        "knee_angle": "Knee angle not near ~90° (check foot placement)",
-        "shoulder_level": "Shoulders not level — roll or twist on mat",
-        "alignment": "Hips drifting sideways vs shoulders",
-        "visibility": "Landmarks not visible — stay in frame",
+        "hip_height": "Hips not high enough — drive through heels",
+        "knee_angle": "Knee angle inconsistent — keep feet planted evenly",
+        "shoulder_level": "Shoulders not level — keep both on the mat",
+        "alignment": "Hips drifting sideways — squeeze glutes evenly",
     }
 
     for key, msg in labels.items():
@@ -199,7 +242,7 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
             st = "warning" if pct < 30 else "error"
             feedback.append(FeedbackItem(st, f"{msg} ({pct:.0f}% of hold frames)", frs[:5]))
 
-    if score >= 85 and not any(len(issues[k]) > total * 0.15 for k in issues if k != "visibility"):
+    if score >= 85 and not any(len(v) > total * 0.15 for v in issues.values()):
         feedback.append(FeedbackItem("good", "Strong bridge mechanics overall", []))
 
     return EvaluationResult(score, feedback, total, "bridge")
