@@ -124,9 +124,9 @@ export default function ExerciseDetail() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
+      <p className="page-crumb">
         <Link to="/exercises">← All exercises</Link>
-      </header>
+      </p>
 
       <h1>{exercise?.name || "Loading…"}</h1>
       <p className="lead">{exercise?.description}</p>

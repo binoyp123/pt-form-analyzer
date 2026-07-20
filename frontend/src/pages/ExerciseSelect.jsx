@@ -18,9 +18,9 @@ export default function ExerciseSelect() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
+      <p className="page-crumb">
         <Link to="/">← Home</Link>
-      </header>
+      </p>
       <h1>Choose an exercise</h1>
       <p className="lead">
         Tap an exercise to see step-by-step form, upload a video, or open live

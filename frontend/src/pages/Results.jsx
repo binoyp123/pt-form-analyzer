@@ -70,9 +70,9 @@ export default function Results() {
 
   return (
     <div className="app-shell">
-      <header className="app-header">
+      <p className="page-crumb">
         <Link to={`/exercise/${exercise}`}>← Analyze again</Link>
-      </header>
+      </p>
 
       <h1>{exerciseName} results</h1>
 

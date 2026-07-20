@@ -12,6 +12,20 @@ const STATUS_LABEL = {
   issue: "Adjust form",
 };
 
+const STABLE_FRAMES = 10;
+const SPEECH_COOLDOWN_MS = 2800;
+
+function speakCue(text, enabled) {
+  if (!enabled || !text || typeof window === "undefined") return;
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.rate = 1.05;
+  u.pitch = 1;
+  u.volume = 0.9;
+  window.speechSynthesis.speak(u);
+}
+
 export default function LiveCoach() {
   const { id } = useParams();
   const exercise =
@@ -25,11 +39,27 @@ export default function LiveCoach() {
   const ctxRef = useRef(createLiveContext());
   const lastVideoTimeRef = useRef(-1);
 
+  const pendingStatusRef = useRef("ready");
+  const pendingCountRef = useRef(0);
+  const displayStatusRef = useRef("ready");
+  const displayCueRef = useRef("");
+  const lastSpeechAtRef = useRef(0);
+  const lastSpokenRef = useRef("");
+  const voiceEnabledRef = useRef(true);
+
   const [ready, setReady] = useState(false);
   const [running, setRunning] = useState(false);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState("ready");
   const [cues, setCues] = useState(["Allow camera access to begin"]);
+  const [voiceOn, setVoiceOn] = useState(true);
+
+  useEffect(() => {
+    voiceEnabledRef.current = voiceOn;
+    if (!voiceOn && typeof window !== "undefined") {
+      window.speechSynthesis?.cancel();
+    }
+  }, [voiceOn]);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,6 +100,7 @@ export default function LiveCoach() {
       cancelAnimationFrame(rafRef.current);
       landmarkerRef.current?.close();
       landmarkerRef.current = null;
+      window.speechSynthesis?.cancel();
       const stream = videoRef.current?.srcObject;
       stream?.getTracks()?.forEach((t) => t.stop());
     };
@@ -77,13 +108,24 @@ export default function LiveCoach() {
 
   useEffect(() => {
     ctxRef.current = createLiveContext();
+    pendingStatusRef.current = "ready";
+    pendingCountRef.current = 0;
+    displayStatusRef.current = "ready";
+    displayCueRef.current = "";
+    lastSpokenRef.current = "";
+    setStatus("ready");
+    setCues(["Allow camera access to begin"]);
   }, [id]);
 
   async function startCamera() {
     setError(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: {
+          facingMode: "user",
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
         audio: false,
       });
       const video = videoRef.current;
@@ -105,9 +147,70 @@ export default function LiveCoach() {
     const stream = videoRef.current?.srcObject;
     stream?.getTracks()?.forEach((t) => t.stop());
     if (videoRef.current) videoRef.current.srcObject = null;
+    window.speechSynthesis?.cancel();
     setRunning(false);
     setStatus("ready");
     setCues(["Camera stopped"]);
+    displayStatusRef.current = "ready";
+    displayCueRef.current = "";
+  }
+
+  function applyStableEvaluation(evaluation) {
+    if (evaluation.status === pendingStatusRef.current) {
+      pendingCountRef.current += 1;
+    } else {
+      pendingStatusRef.current = evaluation.status;
+      pendingCountRef.current = 1;
+    }
+
+    const stable =
+      pendingCountRef.current >= STABLE_FRAMES ||
+      evaluation.status === displayStatusRef.current;
+
+    if (!stable) {
+      draw(
+        canvasRef.current,
+        videoRef.current,
+        evaluation.landmarks,
+        displayStatusRef.current
+      );
+      return;
+    }
+
+    const nextStatus = evaluation.status;
+    const nextCues = evaluation.cues.slice(0, 2);
+    const primaryCue = nextCues[0] || "";
+
+    displayStatusRef.current = nextStatus;
+    displayCueRef.current = primaryCue;
+    setStatus(nextStatus);
+    setCues(nextCues.length ? nextCues : ["Keep going"]);
+
+    const now = performance.now();
+    const shouldSpeak =
+      voiceEnabledRef.current &&
+      primaryCue &&
+      primaryCue !== lastSpokenRef.current &&
+      now - lastSpeechAtRef.current > SPEECH_COOLDOWN_MS &&
+      (nextStatus === "issue" ||
+        (nextStatus === "ready" && primaryCue.toLowerCase().includes("extend")));
+
+    if (shouldSpeak) {
+      lastSpeechAtRef.current = now;
+      lastSpokenRef.current = primaryCue;
+      speakCue(primaryCue, true);
+    }
+
+    if (nextStatus === "hold") {
+      lastSpokenRef.current = "";
+    }
+
+    draw(
+      canvasRef.current,
+      videoRef.current,
+      evaluation.landmarks,
+      nextStatus
+    );
   }
 
   function loop() {
@@ -124,15 +227,14 @@ export default function LiveCoach() {
       const result = landmarker.detectForVideo(video, performance.now());
       const landmarks = result.landmarks?.[0] || null;
       const evaluation = evaluateLiveFrame(id, landmarks, ctxRef.current);
-      setStatus(evaluation.status);
-      setCues(evaluation.cues.slice(0, 2));
-      draw(canvas, video, landmarks, evaluation.status);
+      applyStableEvaluation({ ...evaluation, landmarks });
     }
 
     rafRef.current = requestAnimationFrame(loop);
   }
 
   function draw(canvas, video, landmarks, formStatus) {
+    if (!canvas || !video) return;
     const w = video.videoWidth;
     const h = video.videoHeight;
     if (!w || !h) return;
@@ -140,7 +242,6 @@ export default function LiveCoach() {
     if (canvas.height !== h) canvas.height = h;
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, w, h);
-    // Mirror to match selfie camera feel
     ctx.save();
     ctx.translate(w, 0);
     ctx.scale(-1, 1);
@@ -181,20 +282,18 @@ export default function LiveCoach() {
 
   return (
     <div className="app-shell live-shell">
-      <header className="app-header">
-        <Link to={`/exercise/${id}`}>← Back to {exercise.name}</Link>
-      </header>
+      <p className="page-crumb">
+        <Link to={`/exercise/${id}`}>← {exercise.name}</Link>
+      </p>
 
       <h1>Live: {exercise.name}</h1>
       <p className="lead">
-        On-device pose estimation — no upload, no server round-trip. Position
-        the camera for a side/angled full-body view.
+        On-device pose estimation with spoken cues. Use a side or angled view
+        with your full body in frame.
       </p>
 
       {guide?.film?.items?.[0] && (
-        <p className="meta" style={{ marginTop: "-0.5rem" }}>
-          Tip: {guide.film.items[0]}
-        </p>
+        <p className="meta meta-left">{guide.film.items[0]}</p>
       )}
 
       {error && <div className="error-banner">{error}</div>}
@@ -204,10 +303,11 @@ export default function LiveCoach() {
         <canvas ref={canvasRef} className="live-canvas" />
         {!running && (
           <div className="live-placeholder">
-            {ready
-              ? "Camera ready — tap Start"
-              : "Loading pose model…"}
+            {ready ? "Camera ready — tap Start" : "Loading pose model…"}
           </div>
+        )}
+        {running && cues[0] && (
+          <div className={`live-banner live-banner--${status}`}>{cues[0]}</div>
         )}
       </div>
 
@@ -235,8 +335,16 @@ export default function LiveCoach() {
             Stop
           </button>
         )}
+        <button
+          type="button"
+          className={`btn btn-secondary${voiceOn ? "" : " is-muted"}`}
+          onClick={() => setVoiceOn((v) => !v)}
+          aria-pressed={voiceOn}
+        >
+          {voiceOn ? "Voice on" : "Voice muted"}
+        </button>
         <Link to={`/exercise/${id}`} className="btn btn-secondary">
-          Upload a video instead
+          Upload instead
         </Link>
       </div>
     </div>
