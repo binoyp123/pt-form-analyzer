@@ -1,6 +1,6 @@
 """Shared result types for exercise evaluators."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -16,3 +16,5 @@ class EvaluationResult:
     feedback: list[FeedbackItem]
     frames_analyzed: int
     exercise: str
+    scored_frames: list[int] = field(default_factory=list)
+    issue_frames: list[int] = field(default_factory=list)

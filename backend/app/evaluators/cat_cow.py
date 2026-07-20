@@ -127,34 +127,50 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
     ]
 
     score = 100
+    issue_frames: list[int] = []
+    frame_nums = [fn for fn, _ in raw]
+
+    # Frames with near-zero local motion relative to a short window.
+    flat_frames: list[int] = []
+    for i in range(len(smoothed)):
+        lo = max(0, i - 3)
+        hi = min(len(smoothed), i + 4)
+        local = smoothed[lo:hi]
+        if max(local) - min(local) < MIN_AMPLITUDE * 0.35:
+            flat_frames.append(frame_nums[i])
 
     if span < MIN_AMPLITUDE:
         score -= 40
+        issue_frames = frame_nums[:]
         feedback.append(
             FeedbackItem(
                 "error",
                 "Very little spine motion detected — exaggerate cat and cow or move fully in frame",
-                [],
+                frame_nums[:5],
             )
         )
 
     if cycle_score < MIN_CYCLES:
         score -= 35
+        if not issue_frames:
+            issue_frames = flat_frames or frame_nums[:: max(1, len(frame_nums) // 5)]
         feedback.append(
             FeedbackItem(
                 "warning",
                 "Unclear alternating cat/cow rhythm — aim for slow, repeated rounds",
-                [],
+                (flat_frames or frame_nums)[:5],
             )
         )
 
     if peaks == 0 or troughs == 0:
         score -= 25
+        if not issue_frames:
+            issue_frames = flat_frames or frame_nums[:5]
         feedback.append(
             FeedbackItem(
                 "warning",
                 "Could not see both flexion and extension phases (need side or angled view helps)",
-                [],
+                (flat_frames or frame_nums)[:5],
             )
         )
 
@@ -169,7 +185,14 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
             )
         )
 
-    return EvaluationResult(score, feedback, len(raw), "cat_cow")
+    return EvaluationResult(
+        score,
+        feedback,
+        len(raw),
+        "cat_cow",
+        scored_frames=frame_nums,
+        issue_frames=sorted(set(issue_frames)),
+    )
 
 
 if __name__ == "__main__":

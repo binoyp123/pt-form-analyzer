@@ -245,7 +245,16 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
     if score >= 85 and not any(len(v) > total * 0.15 for v in issues.values()):
         feedback.append(FeedbackItem("good", "Strong bridge mechanics overall", []))
 
-    return EvaluationResult(score, feedback, total, "bridge")
+    issue_frames = sorted({n for nums in issues.values() for n in nums})
+
+    return EvaluationResult(
+        score,
+        feedback,
+        total,
+        "bridge",
+        scored_frames=[f.frame_num for f, _ in frame_metrics],
+        issue_frames=issue_frames,
+    )
 
 
 if __name__ == "__main__":

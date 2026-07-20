@@ -3,7 +3,11 @@ __pycache__/
 backend/app/tmp/
 *.mp4
 *.mov
+!frontend/public/samples/*.mp4
+!backend/tests/fixtures/*.mp4
 .DS_Store
 .idea/
 frontend/node_modules/
 frontend/dist/
+.env
+.env.local

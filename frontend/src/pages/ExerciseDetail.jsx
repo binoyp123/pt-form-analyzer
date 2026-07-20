@@ -1,26 +1,17 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { analyzeVideo, fetchExercises } from "../api.js";
+import FilmingGuide from "../components/FilmingGuide.jsx";
 import UploadButton from "../components/UploadButton.jsx";
 import VideoPlayer from "../components/VideoPlayer.jsx";
 
-const TIPS = {
-  bird_dog: [
-    "Film from the side at hip height",
-    "Hold each extension 2–3 seconds before switching",
-    "Keep your back flat — avoid arching",
-  ],
-  bridge: [
-    "Film from the side, full body visible",
-    "Hold the top position for a few seconds per rep",
-    "Feet hip-width, knees bent, drive hips up evenly",
-  ],
-  cat_cow: [
-    "Film from the side in quadruped position",
-    "Move slowly through 3–5 full cycles",
-    "Let your spine move — arch up, then round down",
-  ],
+const SAMPLE_PATHS = {
+  bird_dog: "/samples/bird_dog.mp4",
+  bridge: "/samples/bridge.mp4",
+  cat_cow: "/samples/cat_cow.mp4",
 };
+
+const MAX_CLIENT_BYTES = 35 * 1024 * 1024;
 
 export default function ExerciseDetail() {
   const { id } = useParams();
@@ -29,7 +20,9 @@ export default function ExerciseDetail() {
   const [file, setFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [statusMsg, setStatusMsg] = useState(null);
   const [error, setError] = useState(null);
+  const [loadingSample, setLoadingSample] = useState(false);
 
   useEffect(() => {
     fetchExercises()
@@ -51,12 +44,60 @@ export default function ExerciseDetail() {
     return () => URL.revokeObjectURL(url);
   }, [file]);
 
+  function validateFile(next) {
+    if (!next) return false;
+    if (next.size > MAX_CLIENT_BYTES) {
+      setError("Video is too large. Please upload a file under 35 MB.");
+      return false;
+    }
+    const typeOk =
+      next.type?.startsWith("video/") ||
+      /\.(mp4|mov|webm|m4v)$/i.test(next.name || "");
+    if (!typeOk) {
+      setError("Please choose a video file (MP4, MOV, or WebM).");
+      return false;
+    }
+    setError(null);
+    return true;
+  }
+
+  function handleFileSelect(next) {
+    if (!validateFile(next)) return;
+    setFile(next);
+  }
+
+  async function handleTrySample() {
+    const path = SAMPLE_PATHS[id];
+    if (!path) {
+      setError("No sample video for this exercise yet.");
+      return;
+    }
+    setLoadingSample(true);
+    setError(null);
+    try {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error("Sample video not found");
+      const blob = await res.blob();
+      const sampleFile = new File([blob], `${id}_sample.mp4`, {
+        type: blob.type || "video/mp4",
+      });
+      setFile(sampleFile);
+    } catch (e) {
+      setError(e.message || "Could not load sample video");
+    } finally {
+      setLoadingSample(false);
+    }
+  }
+
   async function handleAnalyze() {
     if (!file || !id) return;
     setLoading(true);
     setError(null);
+    setStatusMsg(null);
     try {
-      const result = await analyzeVideo(id, file);
+      const result = await analyzeVideo(id, file, {
+        onStatus: setStatusMsg,
+      });
       navigate("/results", {
         state: {
           ...result,
@@ -68,6 +109,7 @@ export default function ExerciseDetail() {
       setError(e.message);
     } finally {
       setLoading(false);
+      setStatusMsg(null);
     }
   }
 
@@ -89,6 +131,16 @@ export default function ExerciseDetail() {
       <h1>{exercise?.name || "Loading…"}</h1>
       <p className="lead">{exercise?.description}</p>
 
+      {id && <FilmingGuide exerciseId={id} />}
+
+      <div className="actions-row" style={{ marginBottom: "1.25rem" }}>
+        <Link to={`/live/${id}`} className="btn btn-secondary">
+          Live camera coaching
+        </Link>
+      </div>
+
+      <h2 className="section-title">Upload your video</h2>
+
       {error && <div className="error-banner">{error}</div>}
 
       <div className={`upload-zone ${file ? "has-file" : ""}`}>
@@ -96,20 +148,24 @@ export default function ExerciseDetail() {
         {file ? (
           <p className="file-name">{file.name}</p>
         ) : (
-          <p>Upload an MP4 or MOV (under ~30 seconds works best)</p>
+          <p>MP4 or MOV · under 35 MB · ~10–30 seconds · side view, full body</p>
         )}
-        <UploadButton
-          onFileSelect={setFile}
-          disabled={loading}
-          label={file ? "Change video" : "Choose video"}
-        />
+        <div className="actions-row" style={{ marginTop: "0.75rem" }}>
+          <UploadButton
+            onFileSelect={handleFileSelect}
+            disabled={loading || loadingSample}
+            label={file ? "Change video" : "Choose video"}
+          />
+          <button
+            type="button"
+            className="btn btn-secondary"
+            disabled={loading || loadingSample || !SAMPLE_PATHS[id]}
+            onClick={handleTrySample}
+          >
+            {loadingSample ? "Loading sample…" : "Try sample video"}
+          </button>
+        </div>
       </div>
-
-      <ul className="tips">
-        {(TIPS[id] || []).map((tip) => (
-          <li key={tip}>{tip}</li>
-        ))}
-      </ul>
 
       <div className="actions-row">
         <button
@@ -130,7 +186,8 @@ export default function ExerciseDetail() {
 
       {loading && (
         <p className="meta" style={{ marginTop: "1rem" }}>
-          This may take 15–45 seconds depending on video length.
+          {statusMsg ||
+            "This may take 15–60 seconds (longer if the free server is waking up)."}
         </p>
       )}
     </div>

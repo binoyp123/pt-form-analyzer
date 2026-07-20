@@ -133,11 +133,15 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
         []
     ))
 
+    issue_frames = sorted({n for nums in issues.values() for n in nums})
+
     return EvaluationResult(
         score=score,
         feedback=feedback,
         frames_analyzed=total,
         exercise="bird_dog",
+        scored_frames=[f.frame_num for f in hold_frames],
+        issue_frames=issue_frames,
     )
 
 

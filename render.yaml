@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: pt-form-analyzer-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: CORS_ORIGINS
+        sync: false
+      - key: MAX_UPLOAD_MB
+        value: "35"
+      - key: MAX_DURATION_SEC
+        value: "45"
