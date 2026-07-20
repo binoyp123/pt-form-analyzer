@@ -23,10 +23,11 @@ export default function Landing() {
       <section className="story" aria-labelledby="story-heading">
         <h2 id="story-heading">Why I built this</h2>
         <p>
-          About three years ago I hurt my lower back and had it checked out. I
-          still do PT-style exercises at home. In-person physical therapy helps
-          a lot, but it gets expensive without good insurance coverage, and I
-          cannot always get into the clinic as often as I would like.
+          About three years ago I hurt my lower back. Imaging later showed a
+          mild herniated disc at L5-S1, and I still do PT-style exercises at
+          home. In-person physical therapy helps a lot, but it gets expensive
+          without good insurance coverage, and I cannot always get into the
+          clinic as often as I would like.
         </p>
         <p>
           Online videos show you what the movement should look like, but they
