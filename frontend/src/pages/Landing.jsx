@@ -7,8 +7,8 @@ export default function Landing() {
         <p className="hero__eyebrow">Home PT form feedback</p>
         <h1 className="hero__brand">PT Form Analyzer</h1>
         <p className="hero__tag">
-          Upload a short clip — or open your webcam — and get clear joint-angle
-          cues on bird dog, glute bridge, and cat-cow.
+          Upload a short clip or open your webcam and get clear joint-angle cues
+          on bird dog, glute bridge, and cat-cow.
         </p>
         <div className="hero__actions">
           <Link to="/exercises" className="btn btn-primary">
@@ -23,15 +23,17 @@ export default function Landing() {
       <section className="story" aria-labelledby="story-heading">
         <h2 id="story-heading">Why I built this</h2>
         <p>
-          After a herniated disc, a lot of my recovery was exercises I was
-          supposed to do at home. I wanted something that could glance at my
-          form the way a session in clinic does — not replace my PT, just help
-          me practice with a little more confidence between visits.
+          About three years ago I hurt my lower back and had it checked out. I
+          still do PT-style exercises at home. In-person physical therapy helps
+          a lot, but it gets expensive without good insurance coverage, and I
+          cannot always get into the clinic as often as I would like.
         </p>
         <p>
-          That became this project: MediaPipe pose estimation, rule-based
-          biomechanics checks you can actually understand, and feedback you can
-          act on — from a video upload or live on camera.
+          Online videos show you what the movement should look like, but they
+          cannot tell you whether your form is actually right or wrong in the
+          moment. I built this so I (and anyone else practicing at home) could
+          get simple, specific feedback on form from an uploaded clip or a live
+          camera, without pretending to replace a real PT.
         </p>
       </section>
 
@@ -48,7 +50,7 @@ export default function Landing() {
           </li>
           <li>
             <strong>Adjust with intent</strong>
-            <span>Specific joint-angle feedback — not a black-box score</span>
+            <span>Specific joint-angle feedback, not a black-box score</span>
           </li>
         </ol>
       </section>

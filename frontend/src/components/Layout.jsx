@@ -10,7 +10,7 @@ export default function Layout() {
       </main>
       <footer className="site-footer">
         <p>
-          Built for home rehab practice — not a medical device. Pose feedback is
+          Built for home rehab practice, not as a medical device. Pose feedback is
           advisory; follow your clinician’s guidance.
         </p>
       </footer>

@@ -112,7 +112,7 @@ PYTHONPATH=. pytest ../tests -q
 - Hold-only scoring vs scoring transitions
 - Free-tier deploy constraints (RAM, cold start) and why live pose is client-side
 - Live coaching: on-device MediaPipe, status debounce, optional speech cues
-- Personal motivation: home PT practice after a herniated disc — assistive, not a medical device
+- Personal motivation: home PT practice after a lower-back injury; assistive tool, not a medical device
 
 ---
 
