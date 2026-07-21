@@ -36,6 +36,36 @@ function birdDogHold(landmarks) {
   );
 }
 
+/** Rough check: body flattened on the floor instead of hands-and-knees. */
+function looksLyingFlat(landmarks) {
+  const points = [
+    lm(landmarks, "left_shoulder"),
+    lm(landmarks, "right_shoulder"),
+    lm(landmarks, "left_hip"),
+    lm(landmarks, "right_hip"),
+    lm(landmarks, "left_knee"),
+    lm(landmarks, "right_knee"),
+    lm(landmarks, "left_ankle"),
+    lm(landmarks, "right_ankle"),
+  ].filter(Boolean);
+  if (points.length < 6) return false;
+  const ys = points.map((p) => p.y);
+  return Math.max(...ys) - Math.min(...ys) < 0.14;
+}
+
+function birdDogReadyCues(landmarks) {
+  if (looksLyingFlat(landmarks)) {
+    return [
+      "You look flat on the floor. Get onto hands and knees first.",
+      "Then reach one arm forward and kick the opposite leg straight back.",
+    ];
+  }
+  return [
+    "From hands and knees, reach one arm forward.",
+    "At the same time, kick the opposite leg straight back and hold.",
+  ];
+}
+
 function checkBirdDog(landmarks) {
   const issues = [];
   const cues = [];
@@ -57,13 +87,15 @@ function checkBirdDog(landmarks) {
     const dx = Math.abs(midS.x - midH.x);
     if (dx > 0.01 && dy / dx > 0.5) {
       issues.push("back_arch");
-      cues.push("Keep your back flatter — avoid sagging or arching");
+      cues.push("Flatten your back. Pull your belly in so your hips stay level.");
     }
   }
 
   const lDiff = lW && lS ? Math.abs(lW.y - lS.y) : 99;
   const rDiff = rW && rS ? Math.abs(rW.y - rS.y) : 99;
   const leftArm = lDiff <= rDiff;
+  const armSide = leftArm ? "left" : "right";
+  const legSide = leftArm ? "right" : "left";
   const shoulder = leftArm ? lS : rS;
   const wrist = leftArm ? lW : rW;
   const hip = leftArm ? rH : lH;
@@ -72,15 +104,19 @@ function checkBirdDog(landmarks) {
 
   if (shoulder && wrist && Math.abs(shoulder.y - wrist.y) >= 0.35) {
     issues.push("arm_not_parallel");
-    cues.push("Reach the arm parallel to the floor");
+    cues.push(
+      `Raise or lower your ${armSide} arm until it lines up parallel with the floor.`
+    );
   }
   if (hip && ankle && Math.abs(hip.y - ankle.y) >= 0.35) {
     issues.push("leg_not_parallel");
-    cues.push("Reach the leg parallel to the floor");
+    cues.push(
+      `Lift your ${legSide} leg until it is parallel with the floor, heel pointing back.`
+    );
   }
   if (hip && knee && ankle && calcAngle(hip, knee, ankle) <= 120) {
     issues.push("leg_bent");
-    cues.push("Straighten the extended leg");
+    cues.push(`Straighten your ${legSide} knee so the leg reaches long.`);
   }
 
   return { issues, cues };
@@ -128,7 +164,7 @@ function checkBridge(landmarks, ctx) {
   const lift = midS.y - midH.y;
   if (lift < 0.005) {
     issues.push("hip_height");
-    cues.push("Lift your hips higher");
+    cues.push("Drive through your heels and lift your hips higher toward the ceiling.");
   }
 
   const avgKnee = (calcAngle(lH, lK, lA) + calcAngle(rH, rK, rA)) / 2;
@@ -139,16 +175,16 @@ function checkBridge(landmarks, ctx) {
   const median = sorted[Math.floor(sorted.length / 2)];
   if (Math.abs(avgKnee - median) > 20) {
     issues.push("knee_angle");
-    cues.push("Keep knee bend steady — avoid collapsing");
+    cues.push("Keep your knees bent the same amount. Do not let them drift in or out.");
   }
 
   if (Math.abs(lS.y - rS.y) > 0.09) {
     issues.push("shoulder_level");
-    cues.push("Level your shoulders");
+    cues.push("Press both shoulders evenly into the floor so they stay level.");
   }
   if (Math.abs(midS.x - midH.x) > 0.22) {
     issues.push("alignment");
-    cues.push("Stack hips under shoulders — avoid drifting sideways");
+    cues.push("Keep your hips centered under your shoulders. Stop drifting to one side.");
   }
 
   return { issues, cues };
@@ -174,7 +210,10 @@ function checkCatCow(landmarks, ctx) {
     return {
       status: "ready",
       issues,
-      cues: ["Get shoulders and hips clearly in frame"],
+      cues: [
+        "Move so I can see your shoulders and hips from the side.",
+        "Stay on hands and knees.",
+      ],
       inHold: false,
     };
   }
@@ -187,7 +226,10 @@ function checkCatCow(landmarks, ctx) {
     return {
       status: "ready",
       issues,
-      cues: ["Start slow cat ↔ cow rounds"],
+      cues: [
+        "Round your back up for cat, then drop your belly for cow.",
+        "Move slowly between those two shapes.",
+      ],
       inHold: true,
     };
   }
@@ -198,12 +240,12 @@ function checkCatCow(landmarks, ctx) {
 
   if (span < 0.02) {
     issues.push("amplitude");
-    cues.push("Exaggerate the arch and round — more spine motion");
+    cues.push("Make the motion bigger. Round up more, then drop your chest more.");
   } else if (delta < 0.008) {
     issues.push("rhythm");
-    cues.push("Keep moving between cat and cow");
+    cues.push("Keep alternating. Do not freeze in the middle.");
   } else {
-    cues.push("Nice rhythm — keep alternating slowly");
+    cues.push("Good. Keep slow cat and cow rounds.");
   }
 
   return {
@@ -221,7 +263,7 @@ export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
   if (!landmarks?.length) {
     return {
       status: "ready",
-      cues: ["Step into frame so your full body is visible"],
+      cues: ["Step back so your full body is in the camera frame."],
       issues: [],
       inHold: false,
     };
@@ -232,7 +274,7 @@ export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
     if (!inHold) {
       return {
         status: "ready",
-        cues: ["Extend opposite arm and leg to enter the hold"],
+        cues: birdDogReadyCues(landmarks),
         issues: [],
         inHold: false,
       };
@@ -240,7 +282,7 @@ export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
     const { issues, cues } = checkBirdDog(landmarks);
     return {
       status: issues.length ? "issue" : "hold",
-      cues: cues.length ? cues.slice(0, 2) : ["Hold steady — form looks good"],
+      cues: cues.length ? cues.slice(0, 2) : ["Hold it. Your bird dog form looks solid."],
       issues,
       inHold: true,
     };
@@ -251,7 +293,10 @@ export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
     if (!inHold) {
       return {
         status: "ready",
-        cues: ["Lie on your back and lift hips into a bridge"],
+        cues: [
+          "Lie on your back with knees bent and feet flat.",
+          "Then squeeze your glutes and lift your hips into a bridge.",
+        ],
         issues: [],
         inHold: false,
       };
@@ -259,7 +304,7 @@ export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
     const { issues, cues } = checkBridge(landmarks, ctx);
     return {
       status: issues.length ? "issue" : "hold",
-      cues: cues.length ? cues.slice(0, 2) : ["Solid bridge — keep hips high"],
+      cues: cues.length ? cues.slice(0, 2) : ["Nice. Keep those hips high."],
       issues,
       inHold: true,
     };
@@ -271,7 +316,7 @@ export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
 
   return {
     status: "ready",
-    cues: ["Unknown exercise"],
+    cues: ["Pick bird dog, bridge, or cat-cow."],
     issues: [],
     inHold: false,
   };

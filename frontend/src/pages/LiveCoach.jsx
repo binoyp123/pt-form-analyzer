@@ -187,21 +187,29 @@ export default function LiveCoach() {
     setCues(nextCues.length ? nextCues : ["Keep going"]);
 
     const now = performance.now();
+    const isPraise =
+      nextStatus === "hold" &&
+      /good|nice|solid|hold it/i.test(primaryCue);
     const shouldSpeak =
       voiceEnabledRef.current &&
       primaryCue &&
       primaryCue !== lastSpokenRef.current &&
       now - lastSpeechAtRef.current > SPEECH_COOLDOWN_MS &&
       (nextStatus === "issue" ||
-        (nextStatus === "ready" && primaryCue.toLowerCase().includes("extend")));
+        nextStatus === "ready" ||
+        (isPraise && lastSpokenRef.current !== primaryCue));
 
     if (shouldSpeak) {
       lastSpeechAtRef.current = now;
       lastSpokenRef.current = primaryCue;
-      speakCue(primaryCue, true);
+      const spoken =
+        nextStatus === "issue" && nextCues[1]
+          ? `${primaryCue} ${nextCues[1]}`
+          : primaryCue;
+      speakCue(spoken, true);
     }
 
-    if (nextStatus === "hold") {
+    if (nextStatus === "hold" && !isPraise) {
       lastSpokenRef.current = "";
     }
 
@@ -291,6 +299,18 @@ export default function LiveCoach() {
         On-device pose estimation with spoken cues. Use a side or angled view
         with your full body in frame.
       </p>
+
+      <div className="live-exercise-switch" role="navigation" aria-label="Live exercises">
+        {FALLBACK_EXERCISES.map((ex) => (
+          <Link
+            key={ex.id}
+            to={`/live/${ex.id}`}
+            className={`live-switch-chip${ex.id === id ? " is-active" : ""}`}
+          >
+            {ex.name}
+          </Link>
+        ))}
+      </div>
 
       {guide?.film?.items?.[0] && (
         <p className="meta meta-left">{guide.film.items[0]}</p>

@@ -63,27 +63,17 @@ export default function SiteNav() {
               aria-expanded={open}
               onClick={() => setOpen((v) => !v)}
             >
-              Exercises
+              Live coaching
               <span className="site-nav__chevron" aria-hidden="true">
                 ▾
               </span>
             </button>
             {open && (
               <div className="site-nav__menu" role="menu">
-                <Link
-                  to="/exercises"
-                  role="menuitem"
-                  onClick={() => {
-                    setOpen(false);
-                    setMobileOpen(false);
-                  }}
-                >
-                  All exercises
-                </Link>
                 {FALLBACK_EXERCISES.map((ex) => (
                   <Link
                     key={ex.id}
-                    to={`/exercise/${ex.id}`}
+                    to={`/live/${ex.id}`}
                     role="menuitem"
                     onClick={() => {
                       setOpen(false);
@@ -97,15 +87,17 @@ export default function SiteNav() {
             )}
           </div>
 
-          <NavLink
-            to="/live/bird_dog"
-            className={({ isActive }) =>
-              `site-nav__link${isActive ? " is-active" : ""}`
-            }
-            onClick={() => setMobileOpen(false)}
-          >
-            Live coaching
-          </NavLink>
+          <div className="site-nav__dropdown site-nav__dropdown--exercises">
+            <NavLink
+              to="/exercises"
+              className={({ isActive }) =>
+                `site-nav__link${isActive ? " is-active" : ""}`
+              }
+              onClick={() => setMobileOpen(false)}
+            >
+              Exercises
+            </NavLink>
+          </div>
 
           <Link
             to="/exercises"
