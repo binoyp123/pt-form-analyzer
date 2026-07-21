@@ -307,8 +307,8 @@ export default function LiveCoach() {
 
       <h1>Live: {exercise.name}</h1>
       <p className="lead">
-        On-device pose estimation with spoken cues. Use a side or angled view
-        with your full body in frame.
+        On-device pose estimation with stage-by-stage coaching and spoken cues.
+        Use a side or angled view with your full body in frame.
       </p>
 
       <div className="live-exercise-switch" role="navigation" aria-label="Live exercises">

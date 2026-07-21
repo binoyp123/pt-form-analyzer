@@ -36,6 +36,7 @@ Live path (no server)
 | Hold-only scoring (bird dog / bridge) | Transitions are noisy; quality matters most at the end range |
 | Live pose in the browser | Avoids free-tier API RAM/cold-start killing a real-time demo |
 | Debounced live status + speech | Fewer red/green flickers; spoken cues with mute + cooldown |
+| Stage-guided live coaches | Bird dog, bridge, and cat-cow walk through setup → action → hold/flow |
 | Video analysis on the server | Reuses the Python evaluators + returns a full scored report |
 
 ---
