@@ -29,12 +29,12 @@ except ImportError:
 # Hold detection — intentionally wide to handle varied camera angles
 KNEE_ANGLE_MIN = 25   # side view can compress to ~40°
 KNEE_ANGLE_MAX = 140  # front view shows ~90°, allow headroom
-HIP_LIFT_MIN = 0.005  # very small; side-view lift is often only 0.01
+HIP_LIFT_MIN = 0.004  # very small; side-view lift is often only 0.01
 
-# Quality thresholds
-SHOULDER_LEVEL_MAX = 0.09   # |L_shoulder.y - R_shoulder.y|
-HIP_SHOULDER_X_ALIGN = 0.22  # |mid_shoulder.x - mid_hip.x|
-KNEE_ANGLE_DEVIATION = 20    # degrees away from the video's own median
+# Quality thresholds (forgiving so tutorial-style high bridges score well)
+SHOULDER_LEVEL_MAX = 0.12   # |L_shoulder.y - R_shoulder.y|
+HIP_SHOULDER_X_ALIGN = 0.28  # |mid_shoulder.x - mid_hip.x|
+KNEE_ANGLE_DEVIATION = 28    # degrees away from the video's own median
 
 
 def _mid(lm1: dict, lm2: dict) -> dict | None:
@@ -245,7 +245,18 @@ def evaluate(frames: list[PoseFrame], extractor: PoseExtractor) -> EvaluationRes
     if score >= 85 and not any(len(v) > total * 0.15 for v in issues.values()):
         feedback.append(FeedbackItem("good", "Strong bridge mechanics overall", []))
 
-    issue_frames = sorted({n for nums in issues.values() for n in nums})
+    # Timeline red only for clear problems (not soft knee-wiggle alone).
+    # A high bridge with feet planted should mostly look green.
+    hard_keys = {"hip_height"}
+    issue_frames = sorted(
+        {
+            n
+            for key, nums in issues.items()
+            for n in nums
+            if key in hard_keys
+            or sum(1 for k, v in issues.items() if n in v) >= 2
+        }
+    )
 
     return EvaluationResult(
         score,

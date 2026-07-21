@@ -1026,7 +1026,8 @@ h2 {
 }
 
 .form-timeline__track {
-  display: flex;
+  position: relative;
+  display: block;
   height: 28px;
   border-radius: 8px;
   overflow: hidden;
@@ -1035,7 +1036,9 @@ h2 {
 }
 
 .form-timeline__seg {
-  flex: 1;
+  position: absolute;
+  top: 0;
+  bottom: 0;
   min-width: 2px;
   padding: 0;
   border: none;

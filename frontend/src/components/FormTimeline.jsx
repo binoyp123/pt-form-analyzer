@@ -6,10 +6,9 @@ export default function FormTimeline({
 }) {
   if (!timeline?.length) return null;
 
-  const endMs =
-    timeline[timeline.length - 1]?.timestamp_ms || 1;
-  const spanMs = Math.max(endMs, durationSec * 1000, 1);
-  const playheadPct = Math.min(100, (currentTimeMs / spanMs) * 100);
+  const lastTs = timeline[timeline.length - 1]?.timestamp_ms || 0;
+  const spanMs = Math.max(durationSec * 1000, lastTs, 1);
+  const playheadPct = Math.min(100, Math.max(0, (currentTimeMs / spanMs) * 100));
 
   const counts = timeline.reduce(
     (acc, t) => {
@@ -18,6 +17,16 @@ export default function FormTimeline({
     },
     {}
   );
+
+  // Position each segment by timestamp so the playhead lines up with the video.
+  const segments = timeline.map((seg, i) => {
+    const start = seg.timestamp_ms;
+    const end =
+      i < timeline.length - 1 ? timeline[i + 1].timestamp_ms : spanMs;
+    const left = (start / spanMs) * 100;
+    const width = Math.max(0.35, ((end - start) / spanMs) * 100);
+    return { seg, left, width };
+  });
 
   return (
     <div className="form-timeline card">
@@ -33,13 +42,14 @@ export default function FormTimeline({
           aria-hidden="true"
         />
         <div className="form-timeline__track" role="list">
-          {timeline.map((seg) => (
+          {segments.map(({ seg, left, width }) => (
             <button
               key={seg.frame_num}
               type="button"
               role="listitem"
               className={`form-timeline__seg form-timeline__seg--${seg.status}`}
-              title={`${(seg.timestamp_ms / 1000).toFixed(1)}s — ${seg.status}`}
+              style={{ left: `${left}%`, width: `${width}%` }}
+              title={`${(seg.timestamp_ms / 1000).toFixed(1)}s · ${seg.status}`}
               onClick={() => onSeek(seg.timestamp_ms / 1000)}
             />
           ))}

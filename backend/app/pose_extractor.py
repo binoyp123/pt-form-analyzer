@@ -73,10 +73,25 @@ class PoseExtractor:
             raise ValueError(f"Could not open video: {video_path}")
 
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
         if target_fps is None:
             target_fps = float(os.getenv("POSE_TARGET_FPS", "10"))
         step = max(1, int(fps / target_fps)) if target_fps > 0 else 1
         max_frames = int(os.getenv("POSE_MAX_FRAMES", "90"))
+
+        # Evenly sample across the whole clip when we need to cap count
+        candidate_idxs = list(range(0, total_frames, step)) if total_frames > 0 else []
+        if total_frames <= 0:
+            candidate_idxs = None  # fall back to sequential read
+        elif len(candidate_idxs) > max_frames:
+            # Pick max_frames indices spread across the video
+            spaced = [
+                candidate_idxs[int(i * (len(candidate_idxs) - 1) / (max_frames - 1))]
+                for i in range(max_frames)
+            ]
+            candidate_idxs = sorted(set(spaced))
+
+        wanted = set(candidate_idxs) if candidate_idxs is not None else None
         frames = []
         frame_num = 0
 
@@ -85,7 +100,10 @@ class PoseExtractor:
             if not ret:
                 break
 
-            if frame_num % step == 0:
+            take = (wanted is None and frame_num % step == 0) or (
+                wanted is not None and frame_num in wanted
+            )
+            if take:
                 h, w = frame.shape[:2]
                 if w > self.max_width:
                     scale = self.max_width / w
@@ -115,7 +133,7 @@ class PoseExtractor:
                         image_width=frame.shape[1],
                         image_height=frame.shape[0],
                     ))
-                    if len(frames) >= max_frames:
+                    if wanted is None and len(frames) >= max_frames:
                         break
 
             frame_num += 1
