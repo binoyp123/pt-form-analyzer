@@ -5,6 +5,7 @@ from pathlib import Path
 import logging
 import os
 import uuid
+import gc
 
 import cv2
 
@@ -16,14 +17,23 @@ logger = logging.getLogger("pt_form_analyzer")
 
 app = FastAPI(title="PT Form Analyzer API")
 
-# Comma-separated origins; empty / * → allow all (local dev).
-_cors_raw = os.getenv("CORS_ORIGINS", "*").strip()
-if _cors_raw in ("", "*"):
-    _cors_origins = ["*"]
-    _cors_credentials = False
-else:
-    _cors_origins = [o.strip() for o in _cors_raw.split(",") if o.strip()]
-    _cors_credentials = True
+
+def _parse_cors_origins(raw: str) -> tuple[list[str], bool]:
+    raw = (raw or "*").strip()
+    if raw in ("", "*"):
+        return ["*"], False
+    origins = []
+    for part in raw.split(","):
+        o = part.strip().rstrip("/")
+        if not o:
+            continue
+        if o != "*" and "://" not in o:
+            o = f"https://{o}"
+        origins.append(o)
+    return origins or ["*"], bool(origins and origins != ["*"])
+
+
+_cors_origins, _cors_credentials = _parse_cors_origins(os.getenv("CORS_ORIGINS", "*"))
 
 app.add_middleware(
     CORSMiddleware,
@@ -182,7 +192,12 @@ async def analyze(
             evaluator = SUPPORTED_EXERCISES[exercise]["evaluator"]
             result = evaluator.evaluate(frames, extractor)
 
-        return {
+        # Cap overlay payload size for free-tier responses
+        max_overlay = int(os.getenv("POSE_OVERLAY_FRAMES", "60"))
+        overlay_step = max(1, len(frames) // max_overlay) if frames else 1
+        overlay_frames = frames[::overlay_step]
+
+        payload = {
             "success": True,
             "exercise": exercise,
             "score": result.score,
@@ -196,14 +211,17 @@ async def analyze(
                 for fb in result.feedback
             ],
             "timeline": build_timeline(
-                frames, result.scored_frames, result.issue_frames
+                overlay_frames, result.scored_frames, result.issue_frames
             ),
-            "pose_frames": serialize_pose_frames(frames),
+            "pose_frames": serialize_pose_frames(overlay_frames),
             "pose_connections": get_pose_connections(),
         }
+        gc.collect()
+        return payload
 
     except Exception:
         logger.exception("Analysis failed")
+        gc.collect()
         return JSONResponse(
             status_code=500,
             content={
@@ -214,3 +232,4 @@ async def analyze(
     finally:
         if video_path.exists():
             video_path.unlink()
+        gc.collect()

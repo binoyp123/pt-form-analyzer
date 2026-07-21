@@ -47,8 +47,19 @@ export async function fetchExercises() {
   }
 }
 
+/** Precomputed demo results (served from Vercel static files). */
+export async function fetchCachedSampleResult(exerciseId) {
+  const res = await fetch(`/samples/${exerciseId}.result.json`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  if (!data?.success) return null;
+  return data;
+}
+
 export async function analyzeVideo(exerciseId, videoFile, { onStatus } = {}) {
-  onStatus?.("Waking the analysis server (first request after idle can take ~30–60s)…");
+  onStatus?.(
+    "Waking the analysis server (first request after idle can take ~30–60s)…"
+  );
   await wakeApi();
   onStatus?.("Running pose estimation and form checks…");
 
@@ -74,15 +85,26 @@ export async function analyzeVideo(exerciseId, videoFile, { onStatus } = {}) {
     );
   }
 
-  let data;
+  const text = await res.text();
+  let data = null;
   try {
-    data = await res.json();
+    data = text ? JSON.parse(text) : null;
   } catch {
-    throw new Error("Unexpected response from the analysis server");
+    if (res.status === 502 || res.status === 503) {
+      throw new Error(
+        "Analysis server is temporarily unavailable (free host may be restarting). Try a sample video, live coaching, or try again in a minute."
+      );
+    }
+    throw new Error(
+      `Unexpected response from the analysis server (HTTP ${res.status}). Try again in a minute.`
+    );
   }
 
   if (!res.ok) {
-    throw new Error(data.error || "Analysis failed");
+    throw new Error(data?.error || `Analysis failed (HTTP ${res.status})`);
+  }
+  if (!data) {
+    throw new Error("Empty response from the analysis server");
   }
   return data;
 }

@@ -1,12 +1,14 @@
 """
 Pose extraction using MediaPipe.
 Takes a video file and returns pose landmarks for each frame.
+Tuned for low-memory hosts (e.g. Render free tier).
 """
 
 import cv2
 import mediapipe as mp
 from dataclasses import dataclass
 from pathlib import Path
+import os
 
 
 @dataclass
@@ -37,19 +39,29 @@ class PoseExtractor:
         "right_ankle": 28,
     }
 
-    def __init__(self, min_detection_confidence=0.5, min_tracking_confidence=0.5):
+    def __init__(
+        self,
+        min_detection_confidence=0.5,
+        min_tracking_confidence=0.5,
+        model_complexity=None,
+    ):
+        if model_complexity is None:
+            model_complexity = int(os.getenv("POSE_MODEL_COMPLEXITY", "0"))
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
             static_image_mode=False,
-            model_complexity=1,
+            model_complexity=model_complexity,
+            enable_segmentation=False,
             min_detection_confidence=min_detection_confidence,
             min_tracking_confidence=min_tracking_confidence,
         )
+        self.max_width = int(os.getenv("POSE_MAX_WIDTH", "480"))
 
-    def extract_from_video(self, video_path: str | Path, target_fps: float = 15) -> list[PoseFrame]:
+    def extract_from_video(self, video_path: str | Path, target_fps: float = 10) -> list[PoseFrame]:
         """
         Extract poses from a video, sampling at *target_fps* to avoid
         processing every frame of high-fps footage (e.g. 60 fps iPhone video).
+        Frames are downscaled before inference to reduce RAM.
         Set target_fps=0 to process every frame.
         """
         video_path = Path(video_path)
@@ -61,7 +73,10 @@ class PoseExtractor:
             raise ValueError(f"Could not open video: {video_path}")
 
         fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        if target_fps is None:
+            target_fps = float(os.getenv("POSE_TARGET_FPS", "10"))
         step = max(1, int(fps / target_fps)) if target_fps > 0 else 1
+        max_frames = int(os.getenv("POSE_MAX_FRAMES", "90"))
         frames = []
         frame_num = 0
 
@@ -71,6 +86,14 @@ class PoseExtractor:
                 break
 
             if frame_num % step == 0:
+                h, w = frame.shape[:2]
+                if w > self.max_width:
+                    scale = self.max_width / w
+                    frame = cv2.resize(
+                        frame,
+                        (self.max_width, int(h * scale)),
+                        interpolation=cv2.INTER_AREA,
+                    )
                 rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 results = self.pose.process(rgb)
 
@@ -92,6 +115,8 @@ class PoseExtractor:
                         image_width=frame.shape[1],
                         image_height=frame.shape[0],
                     ))
+                    if len(frames) >= max_frames:
+                        break
 
             frame_num += 1
 

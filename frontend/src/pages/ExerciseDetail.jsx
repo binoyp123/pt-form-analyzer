@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { analyzeVideo, fetchExercises } from "../api.js";
+import { analyzeVideo, fetchExercises, fetchCachedSampleResult } from "../api.js";
 import FilmingGuide from "../components/FilmingGuide.jsx";
 import UploadButton from "../components/UploadButton.jsx";
 import VideoPlayer from "../components/VideoPlayer.jsx";
@@ -18,6 +18,7 @@ export default function ExerciseDetail() {
   const navigate = useNavigate();
   const [exercise, setExercise] = useState(null);
   const [file, setFile] = useState(null);
+  const [isSample, setIsSample] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [statusMsg, setStatusMsg] = useState(null);
@@ -63,6 +64,7 @@ export default function ExerciseDetail() {
 
   function handleFileSelect(next) {
     if (!validateFile(next)) return;
+    setIsSample(false);
     setFile(next);
   }
 
@@ -79,8 +81,9 @@ export default function ExerciseDetail() {
       if (!res.ok) throw new Error("Sample video not found");
       const blob = await res.blob();
       const sampleFile = new File([blob], `${id}_sample.mp4`, {
-        type: blob.type || "video/mp4",
+        type: "video/mp4",
       });
+      setIsSample(true);
       setFile(sampleFile);
     } catch (e) {
       setError(e.message || "Could not load sample video");
@@ -95,9 +98,17 @@ export default function ExerciseDetail() {
     setError(null);
     setStatusMsg(null);
     try {
-      const result = await analyzeVideo(id, file, {
-        onStatus: setStatusMsg,
-      });
+      let result;
+      // Cached sample results avoid free-tier API crashes / cold starts for demos.
+      if (isSample || /_sample\.mp4$/i.test(file.name || "")) {
+        setStatusMsg("Loading sample analysis…");
+        result = await fetchCachedSampleResult(id);
+      }
+      if (!result) {
+        result = await analyzeVideo(id, file, {
+          onStatus: setStatusMsg,
+        });
+      }
       navigate("/results", {
         state: {
           ...result,
@@ -187,7 +198,9 @@ export default function ExerciseDetail() {
       {loading && (
         <p className="meta" style={{ marginTop: "1rem" }}>
           {statusMsg ||
-            "This may take 15–60 seconds (longer if the free server is waking up)."}
+            (isSample
+              ? "Loading sample results…"
+              : "This may take 15–60 seconds (longer if the free server is waking up).")}
         </p>
       )}
     </div>
