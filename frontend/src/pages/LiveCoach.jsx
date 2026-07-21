@@ -53,6 +53,7 @@ export default function LiveCoach() {
   const [status, setStatus] = useState("ready");
   const [cues, setCues] = useState(["Allow camera access to begin"]);
   const [voiceOn, setVoiceOn] = useState(true);
+  const [stageLabel, setStageLabel] = useState(null);
 
   useEffect(() => {
     voiceEnabledRef.current = voiceOn;
@@ -115,6 +116,7 @@ export default function LiveCoach() {
     lastSpokenRef.current = "";
     setStatus("ready");
     setCues(["Allow camera access to begin"]);
+    setStageLabel(null);
   }, [id]);
 
   async function startCamera() {
@@ -156,14 +158,22 @@ export default function LiveCoach() {
   }
 
   function applyStableEvaluation(evaluation) {
-    if (evaluation.status === pendingStatusRef.current) {
-      pendingCountRef.current += 1;
+    const stageJump = Boolean(evaluation.stageChanged);
+
+    if (!stageJump) {
+      if (evaluation.status === pendingStatusRef.current) {
+        pendingCountRef.current += 1;
+      } else {
+        pendingStatusRef.current = evaluation.status;
+        pendingCountRef.current = 1;
+      }
     } else {
       pendingStatusRef.current = evaluation.status;
-      pendingCountRef.current = 1;
+      pendingCountRef.current = STABLE_FRAMES;
     }
 
     const stable =
+      stageJump ||
       pendingCountRef.current >= STABLE_FRAMES ||
       evaluation.status === displayStatusRef.current;
 
@@ -185,32 +195,28 @@ export default function LiveCoach() {
     displayCueRef.current = primaryCue;
     setStatus(nextStatus);
     setCues(nextCues.length ? nextCues : ["Keep going"]);
+    if (evaluation.stageLabel) setStageLabel(evaluation.stageLabel);
 
     const now = performance.now();
-    const isPraise =
-      nextStatus === "hold" &&
-      /good|nice|solid|hold it/i.test(primaryCue);
+    const cooldown = stageJump ? 900 : SPEECH_COOLDOWN_MS;
     const shouldSpeak =
       voiceEnabledRef.current &&
       primaryCue &&
-      primaryCue !== lastSpokenRef.current &&
-      now - lastSpeechAtRef.current > SPEECH_COOLDOWN_MS &&
-      (nextStatus === "issue" ||
+      (stageJump || primaryCue !== lastSpokenRef.current) &&
+      now - lastSpeechAtRef.current > cooldown &&
+      (stageJump ||
+        nextStatus === "issue" ||
         nextStatus === "ready" ||
-        (isPraise && lastSpokenRef.current !== primaryCue));
+        nextStatus === "hold");
 
     if (shouldSpeak) {
       lastSpeechAtRef.current = now;
       lastSpokenRef.current = primaryCue;
       const spoken =
-        nextStatus === "issue" && nextCues[1]
+        nextCues[1] && (stageJump || nextStatus === "issue")
           ? `${primaryCue} ${nextCues[1]}`
           : primaryCue;
       speakCue(spoken, true);
-    }
-
-    if (nextStatus === "hold" && !isPraise) {
-      lastSpokenRef.current = "";
     }
 
     draw(
@@ -332,6 +338,7 @@ export default function LiveCoach() {
       </div>
 
       <div className={`live-status live-status--${status}`}>
+        {stageLabel && <p className="live-stage-label">{stageLabel}</p>}
         <strong>{STATUS_LABEL[status] || status}</strong>
         <ul className="live-cues">
           {cues.map((c) => (

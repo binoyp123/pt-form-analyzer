@@ -4,6 +4,7 @@
  */
 
 import { calcAngle, lm, mid, visible } from "./geometry.js";
+import { evaluateBridgeCoach, resetBridgeCoach } from "./bridgeCoach.js";
 
 function birdDogHold(landmarks) {
   const lS = lm(landmarks, "left_shoulder");
@@ -122,74 +123,6 @@ function checkBirdDog(landmarks) {
   return { issues, cues };
 }
 
-function bridgeHold(landmarks) {
-  const lS = lm(landmarks, "left_shoulder");
-  const rS = lm(landmarks, "right_shoulder");
-  const lH = lm(landmarks, "left_hip");
-  const rH = lm(landmarks, "right_hip");
-  const lK = lm(landmarks, "left_knee");
-  const rK = lm(landmarks, "right_knee");
-  const lA = lm(landmarks, "left_ankle");
-  const rA = lm(landmarks, "right_ankle");
-  if (![lS, rS, lH, rH, lK, rK, lA, rA].every(Boolean)) return false;
-
-  const midS = mid(lS, rS);
-  const midH = mid(lH, rH);
-  const midK = mid(lK, rK);
-  if (!midS || !midH || !midK) return false;
-  if (midH.y > midS.y - 0.005) return false;
-  if (midK.y > midH.y) return false;
-  const avg =
-    (calcAngle(lH, lK, lA) + calcAngle(rH, rK, rA)) / 2;
-  return avg >= 25 && avg <= 140;
-}
-
-function checkBridge(landmarks, ctx) {
-  const issues = [];
-  const cues = [];
-  const lS = lm(landmarks, "left_shoulder");
-  const rS = lm(landmarks, "right_shoulder");
-  const lH = lm(landmarks, "left_hip");
-  const rH = lm(landmarks, "right_hip");
-  const lK = lm(landmarks, "left_knee");
-  const rK = lm(landmarks, "right_knee");
-  const lA = lm(landmarks, "left_ankle");
-  const rA = lm(landmarks, "right_ankle");
-  const midS = mid(lS, rS);
-  const midH = mid(lH, rH);
-  if (!midS || !midH || !lK || !rK || !lA || !rA) {
-    return { issues, cues };
-  }
-
-  const lift = midS.y - midH.y;
-  if (lift < 0.005) {
-    issues.push("hip_height");
-    cues.push("Drive through your heels and lift your hips higher toward the ceiling.");
-  }
-
-  const avgKnee = (calcAngle(lH, lK, lA) + calcAngle(rH, rK, rA)) / 2;
-  ctx.kneeSamples = ctx.kneeSamples || [];
-  ctx.kneeSamples.push(avgKnee);
-  if (ctx.kneeSamples.length > 45) ctx.kneeSamples.shift();
-  const sorted = [...ctx.kneeSamples].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)];
-  if (Math.abs(avgKnee - median) > 20) {
-    issues.push("knee_angle");
-    cues.push("Keep your knees bent the same amount. Do not let them drift in or out.");
-  }
-
-  if (Math.abs(lS.y - rS.y) > 0.09) {
-    issues.push("shoulder_level");
-    cues.push("Press both shoulders evenly into the floor so they stay level.");
-  }
-  if (Math.abs(midS.x - midH.x) > 0.22) {
-    issues.push("alignment");
-    cues.push("Keep your hips centered under your shoulders. Stop drifting to one side.");
-  }
-
-  return { issues, cues };
-}
-
 function spineMetric(landmarks) {
   const lS = lm(landmarks, "left_shoulder");
   const rS = lm(landmarks, "right_shoulder");
@@ -257,7 +190,7 @@ function checkCatCow(landmarks, ctx) {
 }
 
 /**
- * @returns {{ status: 'ready'|'hold'|'issue', cues: string[], issues: string[], inHold: boolean }}
+ * @returns {{ status: 'ready'|'hold'|'issue', cues: string[], issues: string[], inHold: boolean, stage?: string, stageLabel?: string, stageChanged?: boolean }}
  */
 export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
   if (!landmarks?.length) {
@@ -289,25 +222,7 @@ export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
   }
 
   if (exerciseId === "bridge") {
-    const inHold = bridgeHold(landmarks);
-    if (!inHold) {
-      return {
-        status: "ready",
-        cues: [
-          "Lie on your back with knees bent and feet flat.",
-          "Then squeeze your glutes and lift your hips into a bridge.",
-        ],
-        issues: [],
-        inHold: false,
-      };
-    }
-    const { issues, cues } = checkBridge(landmarks, ctx);
-    return {
-      status: issues.length ? "issue" : "hold",
-      cues: cues.length ? cues.slice(0, 2) : ["Nice. Keep those hips high."],
-      issues,
-      inHold: true,
-    };
+    return evaluateBridgeCoach(landmarks, ctx);
   }
 
   if (exerciseId === "cat_cow") {
@@ -323,5 +238,7 @@ export function evaluateLiveFrame(exerciseId, landmarks, ctx = {}) {
 }
 
 export function createLiveContext() {
-  return { kneeSamples: [], spine: [] };
+  const ctx = { kneeSamples: [], spine: [] };
+  resetBridgeCoach(ctx);
+  return ctx;
 }
