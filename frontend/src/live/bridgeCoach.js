@@ -1,16 +1,30 @@
 /**
  * Guided glute-bridge live coach: setup → lift → hold → lower → repeat.
- * Form corrections only run once hips are clearly lifted (avoids false
- * "alignment" cues while still lying flat).
+ *
+ * Hold quality is scored against an explicit template:
+ *   both feet planted, both knees bent similarly, hips clearly lifted,
+ *   shoulders level, hips centered.
  */
 
 import { calcAngle, lm, mid } from "./geometry.js";
 
-const LIFT_HOLD = 0.04; // clear hip elevation vs shoulders (normalized)
-const LIFT_SETUP_MAX = 0.02; // still "down" on the floor
+const LIFT_HOLD = 0.035;
+const LIFT_SETUP_MAX = 0.02;
 const SETUP_FRAMES = 12;
-const HOLD_GOOD_FRAMES = 40; // ~1–2s of solid hold before cueing lower
+const HOLD_GOOD_FRAMES = 36;
 const DOWN_FRAMES = 10;
+
+/** Ideal hold template (normalized / degrees). */
+const HOLD_TEMPLATE = {
+  minLift: LIFT_HOLD,
+  kneeMin: 35,
+  kneeMax: 125,
+  maxKneeAsymmetry: 22,
+  straightLeg: 145, // above this ≈ leg kicked straight up
+  maxAnkleYDiff: 0.09,
+  maxShoulderDiff: 0.1,
+  maxXAlign: 0.24,
+};
 
 function metrics(landmarks) {
   const lS = lm(landmarks, "left_shoulder");
@@ -38,72 +52,130 @@ function metrics(landmarks) {
     rS,
     lH,
     rH,
+    lK,
+    rK,
+    lA,
+    rA,
     midS,
     midH,
     midK,
+    lKnee,
+    rKnee,
     avgKnee,
     lift,
+    ankleYDiff: Math.abs(lA.y - rA.y),
+    kneeAsym: Math.abs(lKnee - rKnee),
     shoulderDiff: Math.abs(lS.y - rS.y),
     xAlign: Math.abs(midS.x - midH.x),
   };
 }
 
-/** Lying on back, knees bent, hips still down. */
 function isSetup(m) {
   if (!m) return false;
   if (m.lift > LIFT_SETUP_MAX) return false;
   if (!(m.avgKnee >= 35 && m.avgKnee <= 130)) return false;
-  // Knees should sit higher in the frame than hips (bent, not legs flat).
   if (m.midK.y > m.midH.y + 0.02) return false;
+  // Both feet should look planted in setup too.
+  if (m.lKnee > HOLD_TEMPLATE.straightLeg || m.rKnee > HOLD_TEMPLATE.straightLeg) {
+    return false;
+  }
   return true;
 }
 
-/** Clear bridge top position. */
 function isLifted(m) {
   if (!m) return false;
   if (m.lift < LIFT_HOLD) return false;
   if (m.midK.y > m.midH.y) return false;
-  if (!(m.avgKnee >= 25 && m.avgKnee <= 140)) return false;
+  if (!(m.avgKnee >= 25 && m.avgKnee <= 150)) return false;
   return true;
 }
 
-function formCorrections(m, ctx) {
+/**
+ * Compare current pose to the hold template.
+ * Returns score 0–100 plus ranked cues (worst first).
+ */
+function matchHoldTemplate(m) {
   const issues = [];
   const cues = [];
-  if (!m || m.lift < LIFT_HOLD) return { issues, cues };
+  let score = 100;
+  if (!m) return { score: 0, issues, cues };
 
-  if (m.lift < LIFT_HOLD + 0.015) {
-    issues.push("hip_height");
-    cues.push("Lift your hips a little higher. Squeeze your glutes at the top.");
+  const T = HOLD_TEMPLATE;
+
+  // Critical: one leg kicked straight up / off the floor
+  if (m.lKnee >= T.straightLeg || m.rKnee >= T.straightLeg) {
+    const side = m.lKnee >= m.rKnee ? "left" : "right";
+    issues.push("leg_raised");
+    cues.push(
+      `Plant your ${side} foot back on the floor. Both feet stay down in a bridge.`
+    );
+    score -= 45;
+  } else if (m.ankleYDiff > T.maxAnkleYDiff) {
+    const side = m.lA.y < m.rA.y ? "left" : "right";
+    issues.push("foot_lifted");
+    cues.push(
+      `Your ${side} foot looks lifted. Keep both feet flat on the floor.`
+    );
+    score -= 35;
   }
 
-  ctx.kneeSamples = ctx.kneeSamples || [];
-  ctx.kneeSamples.push(m.avgKnee);
-  if (ctx.kneeSamples.length > 45) ctx.kneeSamples.shift();
-  if (ctx.kneeSamples.length >= 8) {
-    const sorted = [...ctx.kneeSamples].sort((a, b) => a - b);
-    const median = sorted[Math.floor(sorted.length / 2)];
-    if (Math.abs(m.avgKnee - median) > 22) {
-      issues.push("knee_angle");
-      cues.push("Keep your knee bend steady. Do not let the knees fall in or out.");
+  if (m.kneeAsym > T.maxKneeAsymmetry && !issues.includes("leg_raised")) {
+    issues.push("knee_asym");
+    cues.push(
+      "Bend both knees about the same. One leg should not be straighter than the other."
+    );
+    score -= 20;
+  }
+
+  if (m.lift < T.minLift + 0.02) {
+    issues.push("hip_height");
+    cues.push("Lift your hips higher and squeeze your glutes at the top.");
+    score -= 25;
+  } else if (m.lift < T.minLift + 0.035) {
+    score -= 8;
+  }
+
+  if (m.avgKnee < T.kneeMin || m.avgKnee > T.kneeMax) {
+    if (!issues.includes("leg_raised")) {
+      issues.push("knee_range");
+      cues.push(
+        m.avgKnee > T.kneeMax
+          ? "Bend your knees more. Feet should stay under your knees."
+          : "Let your knees open a bit more into a comfortable bridge bend."
+      );
+      score -= 15;
     }
   }
 
-  if (m.shoulderDiff > 0.1) {
+  if (m.shoulderDiff > T.maxShoulderDiff) {
     issues.push("shoulder_level");
     cues.push("Press both shoulders evenly into the floor.");
+    score -= 12;
   }
 
-  // Only after a clear lift; starting position often looks "misaligned" in 2D.
-  if (m.lift >= LIFT_HOLD + 0.01 && m.xAlign > 0.25) {
+  if (m.lift >= T.minLift + 0.015 && m.xAlign > T.maxXAlign) {
     issues.push("alignment");
-    cues.push("Keep your hips centered. Do not drift to one side.");
+    cues.push("Keep your hips centered. Do not drift sideways.");
+    score -= 15;
   }
 
-  return { issues, cues };
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  if (issues.length === 0) {
+    cues.push("Good form. Both feet planted, hips high. Keep holding.");
+  }
+
+  return { score, issues, cues: cues.slice(0, 2) };
 }
 
-function result({ status, cues, issues = [], stage, stageChanged = false }) {
+function result({
+  status,
+  cues,
+  issues = [],
+  stage,
+  stageChanged = false,
+  formMatch = null,
+}) {
   return {
     status,
     cues,
@@ -112,6 +184,7 @@ function result({ status, cues, issues = [], stage, stageChanged = false }) {
     stage,
     stageChanged,
     stageLabel: STAGE_LABEL[stage] || stage,
+    formMatch,
   };
 }
 
@@ -122,19 +195,16 @@ const STAGE_LABEL = {
   ready_to_lower: "Step 4 · Lower",
 };
 
-/**
- * @param {object} ctx mutable live context (persists across frames)
- */
 export function evaluateBridgeCoach(landmarks, ctx) {
   if (!ctx.bridgeStage) ctx.bridgeStage = "find_setup";
   ctx.setupCount = ctx.setupCount || 0;
   ctx.holdGoodCount = ctx.holdGoodCount || 0;
   ctx.downCount = ctx.downCount || 0;
+  ctx.lastGoodSpeakAt = ctx.lastGoodSpeakAt || 0;
 
   const m = metrics(landmarks);
   const setup = isSetup(m);
   const lifted = isLifted(m);
-  const prev = ctx.bridgeStage;
 
   if (!m) {
     return result({
@@ -143,28 +213,23 @@ export function evaluateBridgeCoach(landmarks, ctx) {
       cues: [
         "I need a clearer view. Lie on your back with your full body in frame.",
       ],
-      stageChanged: false,
+      formMatch: 0,
     });
   }
 
-  let stageChanged = false;
-
   if (ctx.bridgeStage === "find_setup") {
-    if (setup && !lifted) {
-      ctx.setupCount += 1;
-    } else {
-      ctx.setupCount = 0;
-    }
+    if (setup && !lifted) ctx.setupCount += 1;
+    else ctx.setupCount = 0;
 
     if (ctx.setupCount >= SETUP_FRAMES) {
       ctx.bridgeStage = "ready_to_lift";
-      stageChanged = true;
       return result({
         status: "ready",
         stage: "ready_to_lift",
         stageChanged: true,
+        formMatch: 70,
         cues: [
-          "Good. Back flat, knees bent.",
+          "Good start. Back flat, knees bent, feet planted.",
           "Now squeeze your glutes and lift your hips up.",
         ],
       });
@@ -173,9 +238,9 @@ export function evaluateBridgeCoach(landmarks, ctx) {
     return result({
       status: "ready",
       stage: "find_setup",
-      stageChanged: false,
+      formMatch: setup ? 55 : 25,
       cues: [
-        "Start on your back. Knees bent, feet flat on the floor.",
+        "Start on your back. Knees bent, both feet flat on the floor.",
         "Keep your hips down until I say to lift.",
       ],
     });
@@ -185,14 +250,16 @@ export function evaluateBridgeCoach(landmarks, ctx) {
     if (lifted) {
       ctx.bridgeStage = "holding";
       ctx.holdGoodCount = 0;
-      stageChanged = true;
+      const match = matchHoldTemplate(m);
       return result({
-        status: "hold",
+        status: match.issues.length ? "issue" : "hold",
         stage: "holding",
         stageChanged: true,
-        cues: [
-          "Hips are up. Hold here and keep squeezing your glutes.",
-        ],
+        formMatch: match.score,
+        issues: match.issues,
+        cues: match.issues.length
+          ? match.cues
+          : ["Hips are up. Hold and keep squeezing your glutes."],
       });
     }
 
@@ -203,8 +270,9 @@ export function evaluateBridgeCoach(landmarks, ctx) {
         status: "ready",
         stage: "find_setup",
         stageChanged: true,
+        formMatch: 20,
         cues: [
-          "Find the start again. Back flat, knees bent, feet on the floor.",
+          "Find the start again. Back flat, knees bent, both feet on the floor.",
         ],
       });
     }
@@ -212,17 +280,16 @@ export function evaluateBridgeCoach(landmarks, ctx) {
     return result({
       status: "ready",
       stage: "ready_to_lift",
-      stageChanged: false,
+      formMatch: 60,
       cues: [
         "Squeeze your glutes and press your hips toward the ceiling.",
-        "Drive through your heels as you lift.",
+        "Keep both feet flat as you lift.",
       ],
     });
   }
 
   if (ctx.bridgeStage === "holding") {
     if (!lifted) {
-      // Dropped early → go back toward setup / lift
       ctx.downCount += 1;
       if (ctx.downCount >= DOWN_FRAMES) {
         ctx.bridgeStage = setup ? "ready_to_lift" : "find_setup";
@@ -232,6 +299,7 @@ export function evaluateBridgeCoach(landmarks, ctx) {
           status: "ready",
           stage: ctx.bridgeStage,
           stageChanged: true,
+          formMatch: setup ? 65 : 30,
           cues: setup
             ? ["Hips are down. Squeeze and lift again when ready."]
             : ["Reset. Back flat, knees bent, then lift again."],
@@ -240,21 +308,22 @@ export function evaluateBridgeCoach(landmarks, ctx) {
       return result({
         status: "ready",
         stage: "holding",
-        stageChanged: false,
-        cues: ["Hips dropped. Lift back up or reset on the floor."],
+        formMatch: 40,
+        cues: ["Hips dropped. Lift back up, or reset with both feet on the floor."],
       });
     }
 
     ctx.downCount = 0;
-    const { issues, cues } = formCorrections(m, ctx);
-    if (issues.length) {
-      ctx.holdGoodCount = Math.max(0, ctx.holdGoodCount - 2);
+    const match = matchHoldTemplate(m);
+
+    if (match.issues.length) {
+      ctx.holdGoodCount = Math.max(0, ctx.holdGoodCount - 3);
       return result({
         status: "issue",
         stage: "holding",
-        stageChanged: false,
-        issues,
-        cues: cues.slice(0, 2),
+        formMatch: match.score,
+        issues: match.issues,
+        cues: match.cues,
       });
     }
 
@@ -265,8 +334,9 @@ export function evaluateBridgeCoach(landmarks, ctx) {
         status: "hold",
         stage: "ready_to_lower",
         stageChanged: true,
+        formMatch: match.score,
         cues: [
-          "Nice hold. Now lower your hips slowly back down with control.",
+          "Great form on that hold. Now lower your hips slowly with control.",
         ],
       });
     }
@@ -274,8 +344,8 @@ export function evaluateBridgeCoach(landmarks, ctx) {
     return result({
       status: "hold",
       stage: "holding",
-      stageChanged: false,
-      cues: ["Hold. Keep hips high and level."],
+      formMatch: match.score,
+      cues: match.cues,
     });
   }
 
@@ -290,22 +360,22 @@ export function evaluateBridgeCoach(landmarks, ctx) {
           status: "ready",
           stage: ctx.bridgeStage,
           stageChanged: true,
+          formMatch: 80,
           cues: [
-            "Good. That was one rep.",
-            "When ready, squeeze and lift again.",
+            "Good rep. When ready, squeeze and lift again.",
           ],
         });
       }
     } else {
       ctx.downCount = 0;
-      const { issues, cues } = formCorrections(m, ctx);
-      if (issues.length) {
+      const match = matchHoldTemplate(m);
+      if (match.issues.length) {
         return result({
           status: "issue",
           stage: "ready_to_lower",
-          stageChanged: false,
-          issues,
-          cues: cues.slice(0, 2),
+          formMatch: match.score,
+          issues: match.issues,
+          cues: match.cues,
         });
       }
     }
@@ -313,10 +383,8 @@ export function evaluateBridgeCoach(landmarks, ctx) {
     return result({
       status: lifted ? "hold" : "ready",
       stage: "ready_to_lower",
-      stageChanged: prev !== "ready_to_lower" ? stageChanged : false,
-      cues: [
-        "Lower your hips slowly until your back is flat again.",
-      ],
+      formMatch: lifted ? 85 : 70,
+      cues: ["Lower your hips slowly until your back is flat again."],
     });
   }
 
@@ -325,6 +393,7 @@ export function evaluateBridgeCoach(landmarks, ctx) {
     status: "ready",
     stage: "find_setup",
     stageChanged: true,
+    formMatch: 0,
     cues: ["Lie on your back with knees bent to begin."],
   });
 }
@@ -335,4 +404,5 @@ export function resetBridgeCoach(ctx) {
   ctx.holdGoodCount = 0;
   ctx.downCount = 0;
   ctx.kneeSamples = [];
+  ctx.lastGoodSpeakAt = 0;
 }

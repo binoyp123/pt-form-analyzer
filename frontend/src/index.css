@@ -1154,6 +1154,40 @@ h2 {
   display: block;
 }
 
+.live-status__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.live-status__row strong {
+  margin: 0;
+}
+
+.live-match {
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+}
+
+.live-match--good {
+  background: #e3f6ea;
+  color: var(--good);
+}
+
+.live-match--ok {
+  background: #fff4e0;
+  color: var(--warning);
+}
+
+.live-match--poor {
+  background: #fde8e6;
+  color: var(--error);
+}
+
 .live-stage-label {
   margin: 0 0 0.35rem;
   font-size: 0.8rem;

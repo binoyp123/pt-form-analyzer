@@ -7,9 +7,9 @@ import { createLiveContext, evaluateLiveFrame } from "../live/rules.js";
 import { getGuide } from "../data/exerciseGuides.js";
 
 const STATUS_LABEL = {
-  ready: "Ready",
-  hold: "Good hold",
-  issue: "Adjust form",
+  ready: "Getting set",
+  hold: "Good form",
+  issue: "Fix this",
 };
 
 const STABLE_FRAMES = 10;
@@ -54,6 +54,7 @@ export default function LiveCoach() {
   const [cues, setCues] = useState(["Allow camera access to begin"]);
   const [voiceOn, setVoiceOn] = useState(true);
   const [stageLabel, setStageLabel] = useState(null);
+  const [formMatch, setFormMatch] = useState(null);
 
   useEffect(() => {
     voiceEnabledRef.current = voiceOn;
@@ -117,6 +118,7 @@ export default function LiveCoach() {
     setStatus("ready");
     setCues(["Allow camera access to begin"]);
     setStageLabel(null);
+    setFormMatch(null);
   }, [id]);
 
   async function startCamera() {
@@ -196,6 +198,9 @@ export default function LiveCoach() {
     setStatus(nextStatus);
     setCues(nextCues.length ? nextCues : ["Keep going"]);
     if (evaluation.stageLabel) setStageLabel(evaluation.stageLabel);
+    if (typeof evaluation.formMatch === "number") {
+      setFormMatch(evaluation.formMatch);
+    }
 
     const now = performance.now();
     const cooldown = stageJump ? 900 : SPEECH_COOLDOWN_MS;
@@ -339,7 +344,18 @@ export default function LiveCoach() {
 
       <div className={`live-status live-status--${status}`}>
         {stageLabel && <p className="live-stage-label">{stageLabel}</p>}
-        <strong>{STATUS_LABEL[status] || status}</strong>
+        <div className="live-status__row">
+          <strong>{STATUS_LABEL[status] || status}</strong>
+          {typeof formMatch === "number" && (
+            <span
+              className={`live-match live-match--${
+                formMatch >= 80 ? "good" : formMatch >= 55 ? "ok" : "poor"
+              }`}
+            >
+              Form {formMatch}%
+            </span>
+          )}
+        </div>
         <ul className="live-cues">
           {cues.map((c) => (
             <li key={c}>{c}</li>
